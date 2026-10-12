@@ -18,21 +18,47 @@ const storedCart = () => {
 }
 
 const currentPage = () => {
-  const path = window.location.pathname.toLowerCase()
-  if (path.endsWith('/menu') || path.endsWith('/menu.html')) return 'menu'
-  if (path.endsWith('/login') || path.endsWith('/login.html')) return 'login'
-  if (path.endsWith('/registro') || path.endsWith('/registro.html')) return 'register'
-  return 'home'
+  const path = window.location.pathname.toLowerCase().replace(/\/$/, '') || '/'
+  if (path === '/' || path === '/index.html') return 'home'
+  if (path === '/menu' || path === '/menu.html') return 'menu'
+  if (path === '/login' || path === '/login.html') return 'login'
+  if (path === '/registro' || path === '/registro.html') return 'register'
+  return 'not-found'
 }
 
+const applicationPaths = new Set(['/', '/index.html', '/menu', '/menu.html', '/login', '/login.html', '/registro', '/registro.html'])
+
 function App() {
-  const [page] = useState(currentPage)
+  const [page, setPage] = useState(currentPage)
   const [loggedIn, setLoggedIn] = useState(() => localStorage.getItem('texasLoggedIn') === 'true')
   const [cart, setCart] = useState(storedCart)
   const [cartOpen, setCartOpen] = useState(false)
   const [toast, setToast] = useState(null)
   const [order, setOrder] = useState(null)
   const [redirectReason, setRedirectReason] = useState('')
+
+  useEffect(() => {
+    const onPopState = () => setPage(currentPage())
+    const onDocumentClick = (event) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+      const anchor = event.target.closest('a[href]')
+      if (!anchor || anchor.target || anchor.hasAttribute('download') || anchor.rel === 'external') return
+      const url = new URL(anchor.href, window.location.href)
+      if (url.origin !== window.location.origin || url.pathname === window.location.pathname && url.hash) return
+      if (url.pathname.startsWith('/api/') || (!applicationPaths.has(url.pathname.toLowerCase()) && /\.[^/]+$/.test(url.pathname))) return
+      event.preventDefault()
+      window.history.pushState({}, '', `${url.pathname}${url.search}${url.hash}`)
+      setPage(currentPage())
+      setCartOpen(false)
+      if (!url.hash) window.scrollTo(0, 0)
+    }
+    window.addEventListener('popstate', onPopState)
+    document.addEventListener('click', onDocumentClick)
+    return () => {
+      window.removeEventListener('popstate', onPopState)
+      document.removeEventListener('click', onDocumentClick)
+    }
+  }, [])
 
   useEffect(() => {
     localStorage.setItem('texasCart', JSON.stringify(cart))
@@ -56,7 +82,8 @@ function App() {
   const addProduct = (product) => {
     if (!loggedIn) {
       sessionStorage.setItem('loginRedirectReason', 'Debes iniciar sesión para agregar productos a tu pedido.')
-      window.location.href = '/login.html'
+      window.history.pushState({}, '', '/login.html')
+      setPage('login')
       return
     }
     setCart((current) => {
@@ -90,14 +117,16 @@ function App() {
     setLoggedIn(false)
     setCartOpen(false)
     window.alert('Has cerrado sesión.')
-    window.location.href = '/index.html'
+    window.history.pushState({}, '', '/index.html')
+    setPage('home')
   }
 
   const authenticate = (message) => {
     localStorage.setItem('texasLoggedIn', 'true')
     setLoggedIn(true)
     window.alert(message)
-    window.location.href = '/menu.html'
+    window.history.pushState({}, '', '/menu.html')
+    setPage('menu')
   }
 
   return (
@@ -117,6 +146,9 @@ function App() {
       {page === 'menu' && <MenuPage products={products} onAddProduct={addProduct} />}
       {(page === 'login' || page === 'register') && (
         <AuthPage page={page} redirectReason={redirectReason} onAuthenticate={authenticate} />
+      )}
+      {page === 'not-found' && (
+        <main className="main-container"><section className="hero page-section"><h1>Página no encontrada</h1><p>La dirección que buscas no existe.</p><a href="/index.html" className="btn-primary">Volver al inicio</a></section></main>
       )}
       <Footer page={page} />
       {toast && <Toast message={toast.message} action={toast.action} onAction={() => setCartOpen(true)} onClose={() => setToast(null)} />}
